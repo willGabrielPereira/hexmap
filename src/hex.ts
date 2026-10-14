@@ -1,4 +1,6 @@
 // Hex pointy-top, coordenadas offset "odd-r" (col,row), chave "col,row".
+import type { Bg } from './types'
+
 export const SIZE = 40
 const S3 = Math.sqrt(3)
 
@@ -40,10 +42,46 @@ export const isNeighbor = (a: string, b: string) => {
   return neighbors(c, r).some(([nc, nr]) => key(nc, nr) === b)
 }
 
+// fundo: escala por `factor` (limitada) mantendo fixo o ponto de mundo (wx, wy)
+export const BG_SCALE = [0.02, 20] as const
+export function anchorScale(bg: Pick<Bg, 'x' | 'y' | 'scale'>, factor: number, wx: number, wy: number): Pick<Bg, 'x' | 'y' | 'scale'> {
+  const scale = Math.min(BG_SCALE[1], Math.max(BG_SCALE[0], bg.scale * factor))
+  const k = scale / bg.scale
+  return { x: wx - (wx - bg.x) * k, y: wy - (wy - bg.y) * k, scale }
+}
+
+// fundo: p1, p2 = pontos da imagem (px) a `hexes` larguras de hex um do outro NA HORIZONTAL (lados verticais do hex
+// pontudo: a altura do clique não importa); p1 fica fixo no mundo
+export function scaleFromPoints(p1: [number, number], p2: [number, number], hexes: number, cur: Pick<Bg, 'x' | 'y' | 'scale'>): Pick<Bg, 'x' | 'y' | 'scale'> {
+  const d = Math.abs(p2[0] - p1[0])
+  if (!(d > 0) || !Number.isFinite(d) || !(hexes > 0) || !Number.isFinite(hexes)) return cur
+  const scale = Math.min(BG_SCALE[1], Math.max(BG_SCALE[0], (hexes * SIZE * S3) / d))
+  return { x: cur.x + p1[0] * (cur.scale - scale), y: cur.y + p1[1] * (cur.scale - scale), scale }
+}
+
 // aresta compartilhada por dois hexes vizinhos: os 2 cantos de `a` mais próximos do centro de `b`
 export function sharedEdge(a: string, b: string): [number, number][] {
   const [bx, by] = center(...parse(b))
   return corners(...parse(a))
     .sort((p, q) => Math.hypot(p[0] - bx, p[1] - by) - Math.hypot(q[0] - bx, q[1] - by))
     .slice(0, 2)
+}
+
+// distância em hexes (odd-r -> axial -> cubo)
+export function hexDistance(a: string, b: string): number {
+  const ax = (k: string) => { const [c, r] = parse(k); return [c - (r - (r & 1)) / 2, r] }
+  const [aq, ar] = ax(a), [bq, br] = ax(b)
+  const dq = aq - bq, dr = ar - br
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2
+}
+
+// hexes atravessados por a -> b; o desvio (1e-6, 2e-6) evita empates exatos nas arestas
+export function hexLine(a: string, b: string): string[] {
+  const n = hexDistance(a, b)
+  if (n === 0) return [a]
+  const [ax, ay] = center(...parse(a)), [bx, by] = center(...parse(b))
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const t = i / n
+    return key(...pixelToHex(ax + (bx - ax) * t + 1e-6, ay + (by - ay) * t + 2e-6))
+  })
 }
